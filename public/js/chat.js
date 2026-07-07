@@ -241,12 +241,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Time + Status
     if (isSent) {
       h += `<div class="message-meta sent-meta">`;
-      h += `<span class="message-time">${msg.timestamp}</span>`;
-      h += `<span class="message-status sent" data-status-for="${msg.id}">Sent ✓</span>`;
+h += `<span class="message-time">${formatTime(msg.timestamp)}</span>`;      h += `<span class="message-status sent" data-status-for="${msg.id}">Sent ✓</span>`;
       h += `</div>`;
     } else {
-      h += `<span class="message-time">${msg.timestamp}</span>`;
-    }
+h += `<span class="message-time">${formatTime(msg.timestamp)}</span>`;    }
 
     wr.innerHTML = h;
     $msgs.appendChild(wr);
@@ -541,6 +539,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   $logout.onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/'; };
 
   function scrollBot() { requestAnimationFrame(() => $msgs.scrollTop = $msgs.scrollHeight); }
+  function formatTime(ts) {
+  const date = new Date(ts);
+  let hours = date.getHours();
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  return `${hours}:${minutes} ${ampm}`;
+}
   function esc(t) { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
   function fIcon(n) { if (!n) return '📎'; const e = n.split('.').pop().toLowerCase(); return { pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',zip:'📦',rar:'📦',mp3:'🎵',mp4:'🎬',txt:'📃',apk:'📱' }[e] || '📎'; }
   function fSize(b) { if (!b) return ''; if (b < 1024) return b + 'B'; if (b < 1048576) return (b / 1024).toFixed(1) + 'KB'; return (b / 1048576).toFixed(1) + 'MB'; }
