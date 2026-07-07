@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   let replyTo = null, selMsg = null, typTimer = null, isTyp = false;
   let recorder = null, audioChunks = [], vInterval = null, vSec = 0, vStream = null;
 
+  // Seen tracking
+  const unseenMsgIds = new Set(); // msg IDs that I haven't seen yet
+  const myMsgIds = new Set(); // my sent message IDs
+
   // Notif sound
   let notifCtx = null;
   function playNotif() {
@@ -60,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (sender === ME) return;
     playNotif();
     if (!document.hasFocus() && 'Notification' in window && Notification.permission === 'granted') {
-      try { new Notification('Made Just for You ', { body: `${sender}: ${text || '📎'}`, tag: 'jfy', renotify: true, silent: true }); } catch (e) {}
+      try { new Notification('Just for You', { body: `${sender}: ${text || '📎'}`, tag: 'jfy', renotify: true, silent: true }); } catch (e) {}
     }
   }
 
@@ -81,47 +85,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   socket.on('newMessage', (msg) => {
     const w = $msgs.querySelector('.welcome-msg'); if (w) w.remove();
-    appendMsg(msg); scrollBot();
+    appendMsg(msg);
+    scrollBot();
     showNotif(msg.sender, msg.text || (msg.voice ? '🎤 Voice' : ''));
+
+    // If msg is from others, track as unseen then check visibility
+    if (msg.sender !== ME) {
+      unseenMsgIds.add(msg.id);
+      checkSeenMessages();
+    }
   });
 
-socket.on('messageDeleted', (d) => {
-  console.log('messageDeleted received:', d);
-  
-  // Try both data-mid and data-msg-id (in case of mismatch)
-  let el = document.querySelector(`[data-mid="${d.id}"]`);
-  
-  if (!el) {
-    // Fallback: try finding by other attribute names
-    el = document.querySelector(`[data-msg-id="${d.id}"]`);
-  }
-  
-  if (!el) {
-    // Fallback: search all message wrappers
-    const allMsgs = document.querySelectorAll('.message-wrapper');
-    allMsgs.forEach(m => {
-      if (m.dataset.mid === d.id || m.dataset.msgId === d.id) {
-        el = m;
-      }
-    });
-  }
-
-  console.log('Found element to delete:', el);
-
-  if (el) {
-    el.style.pointerEvents = 'none';
-    el.classList.add('fade-out-left');
-    
-    // Remove after animation OR after timeout (safety)
-    const removeEl = () => {
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-    };
-    
-    el.addEventListener('animationend', removeEl);
-    // Safety timeout in case animation doesn't fire
-    setTimeout(removeEl, 600);
-  }
-});
+  socket.on('messageDeleted', (d) => {
+    let el = document.querySelector(`[data-mid="${d.id}"]`);
+    if (el) {
+      el.style.pointerEvents = 'none';
+      el.classList.add('fade-out-left');
+      const removeEl = () => { if (el && el.parentNode) el.parentNode.removeChild(el); };
+      el.addEventListener('animationend', removeEl);
+      setTimeout(removeEl, 600);
+    }
+    unseenMsgIds.delete(d.id);
+    myMsgIds.delete(d.id);
+  });
 
   socket.on('messageReaction', (d) => {
     const c = document.querySelector(`[data-rf="${d.msgId}"]`); if (!c) return;
@@ -133,6 +119,24 @@ socket.on('messageDeleted', (d) => {
       const cn = b.querySelector('.rc'); const n = (parseInt(cn.textContent) || 1) - 1;
       if (n <= 0) b.remove(); else { cn.textContent = n; if (d.user === ME) b.classList.remove('reacted'); }
     }
+  });
+
+  // ===== SEEN EVENT FROM SERVER =====
+  socket.on('messagesSeen', (data) => {
+    // data = { seenBy: username, msgIds: [...] }
+    if (data.seenBy === ME) return; // ignore own seen events
+
+    data.msgIds.forEach(id => {
+      if (myMsgIds.has(id)) {
+        // Update status to "seen"
+        const statusEl = document.querySelector(`[data-status-for="${id}"]`);
+        if (statusEl) {
+          statusEl.textContent = 'Seen ✓✓';
+          statusEl.classList.add('seen');
+          statusEl.classList.remove('sent');
+        }
+      }
+    });
   });
 
   socket.on('userTyping', (u) => { $typing.querySelector('.typing-name').textContent = u; $typing.style.display = 'flex'; });
@@ -200,12 +204,15 @@ socket.on('messageDeleted', (d) => {
     audioChunks = []; if (vStream) { vStream.getTracks().forEach(t => t.stop()); vStream = null; } recorder = null;
   }
 
-  // ===== APPEND =====
+  // ===== APPEND MESSAGE =====
   function appendMsg(msg) {
     const isSent = msg.sender === ME;
     const wr = document.createElement('div');
     wr.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
     wr.dataset.mid = msg.id;
+
+    // Track my messages for seen status
+    if (isSent) myMsgIds.add(msg.id);
 
     let h = '';
     if (!isSent) h += `<span class="message-sender">${esc(msg.sender)}</span>`;
@@ -230,7 +237,16 @@ socket.on('messageDeleted', (d) => {
     if (msg.text) h += `<span class="message-text">${esc(msg.text)}</span>`;
     h += `</div>`;
     h += `<div class="message-reactions" data-rf="${msg.id}"></div>`;
-    h += `<span class="message-time">${msg.timestamp}</span>`;
+
+    // Time + Status
+    if (isSent) {
+      h += `<div class="message-meta sent-meta">`;
+      h += `<span class="message-time">${msg.timestamp}</span>`;
+      h += `<span class="message-status sent" data-status-for="${msg.id}">Sent ✓</span>`;
+      h += `</div>`;
+    } else {
+      h += `<span class="message-time">${msg.timestamp}</span>`;
+    }
 
     wr.innerHTML = h;
     $msgs.appendChild(wr);
@@ -254,14 +270,57 @@ socket.on('messageDeleted', (d) => {
     const vel = wr.querySelector('.voice-msg');
     if (vel) setupVoicePlayer(vel);
 
-    // ====== SWIPE + LONG PRESS (BOTH MOUSE AND TOUCH) ======
+    // Swipe + Long press
     setupInteraction(bubble, arrow, msg, isSent);
+
+    // Desktop right click
+    bubble.addEventListener('contextmenu', (e) => { e.preventDefault(); openCtx(msg, e.clientX, e.clientY); });
   }
 
-  // ============================================================
-  //  UNIFIED INTERACTION: Swipe + Long Press
-  //  Works on BOTH laptop (mouse) and mobile (touch)
-  // ============================================================
+  // ===== SEEN DETECTION using IntersectionObserver =====
+  const seenObserver = new IntersectionObserver((entries) => {
+    const newlySeen = [];
+
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const mid = entry.target.dataset.mid;
+        if (mid && unseenMsgIds.has(mid)) {
+          unseenMsgIds.delete(mid);
+          newlySeen.push(mid);
+          seenObserver.unobserve(entry.target);
+        }
+      }
+    });
+
+    if (newlySeen.length > 0) {
+      socket.emit('seenMessages', { msgIds: newlySeen });
+    }
+  }, {
+    root: $msgs,
+    threshold: 0.5 // 50% visible = seen
+  });
+
+  function checkSeenMessages() {
+    // Observe all unseen messages
+    unseenMsgIds.forEach(id => {
+      const el = document.querySelector(`[data-mid="${id}"]`);
+      if (el) seenObserver.observe(el);
+    });
+  }
+
+  // Also check when user scrolls
+  $msgs.addEventListener('scroll', () => {
+    checkSeenMessages();
+  });
+
+  // Also check when tab becomes visible
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      checkSeenMessages();
+    }
+  });
+
+  // ===== SWIPE + LONG PRESS =====
   function setupInteraction(bubble, arrow, msg, isSent) {
     const THRESHOLD = 65;
     let startX = 0, startY = 0;
@@ -269,18 +328,13 @@ socket.on('messageDeleted', (d) => {
     let moveAmount = 0;
     let longTimer = null;
     let longFired = false;
-    let decided = false; // for touch: decided scroll vs swipe
+    let decided = false;
     let isTouch = false;
 
-    // === Shared logic ===
     function onStart(x, y, touch) {
-      startX = x;
-      startY = y;
-      dragging = false;
-      moveAmount = 0;
-      longFired = false;
-      decided = false;
-      isTouch = touch;
+      startX = x; startY = y;
+      dragging = false; moveAmount = 0;
+      longFired = false; decided = false; isTouch = touch;
 
       bubble.style.transition = 'none';
       bubble.style.transform = '';
@@ -298,150 +352,81 @@ socket.on('messageDeleted', (d) => {
 
     function onMove(x, y) {
       if (longFired) return;
+      const dx = x - startX, dy = y - startY;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
 
-      const dx = x - startX;
-      const dy = y - startY;
-      const adx = Math.abs(dx);
-      const ady = Math.abs(dy);
-
-      // For touch: decide direction first
       if (isTouch && !decided) {
         if (adx < 8 && ady < 8) return;
-        decided = true;
-        clearTimeout(longTimer);
-        if (ady > adx * 1.2) {
-          // vertical = don't swipe, let scroll happen naturally
-          // But touch-action:none blocks scroll on bubble
-          // So we need to NOT prevent default and cancel our handler
-          dragging = false;
-          return;
-        }
+        decided = true; clearTimeout(longTimer);
+        if (ady > adx * 1.2) { dragging = false; return; }
       }
-
-      // For mouse: any movement > 5px cancels long press
       if (!isTouch && adx < 5 && ady < 5) return;
       if (!isTouch) clearTimeout(longTimer);
-
-      // Check correct direction
-      // isSent (my msg, right side) → only LEFT drag (dx < 0)
-      // received (other msg, left side) → only RIGHT drag (dx > 0)
       if (isSent && dx > 0) return;
       if (!isSent && dx < 0) return;
-
-      // Must have enough horizontal movement
       if (adx < 5) return;
 
       dragging = true;
-
-      const raw = adx;
-      const max = THRESHOLD + 40;
+      const raw = adx, max = THRESHOLD + 40;
       const damp = raw > max ? max + (raw - max) * 0.1 : raw;
       const px = isSent ? -damp : damp;
       moveAmount = px;
-
       bubble.style.transform = `translateX(${px}px)`;
 
-      // Arrow
       const prog = raw / THRESHOLD;
       if (prog > 0.25) {
         arrow.style.opacity = Math.min(1, prog).toString();
-        arrow.style.transform = prog >= 1
-          ? 'translateY(-50%) scale(1.3)'
-          : `translateY(-50%) scale(${0.5 + prog * 0.5})`;
-      } else {
-        arrow.style.opacity = '0';
-      }
+        arrow.style.transform = prog >= 1 ? 'translateY(-50%) scale(1.3)' : `translateY(-50%) scale(${0.5 + prog * 0.5})`;
+      } else { arrow.style.opacity = '0'; }
     }
 
     function onEnd() {
       clearTimeout(longTimer);
-
       if (dragging) {
         bubble.style.transition = 'transform .25s cubic-bezier(.25,.46,.45,.94)';
         bubble.style.transform = '';
         arrow.style.opacity = '0';
         arrow.style.transform = 'translateY(-50%) scale(.5)';
-
         if (Math.abs(moveAmount) >= THRESHOLD) {
           setReply(msg);
           if (navigator.vibrate) navigator.vibrate(20);
         }
       }
-
-      dragging = false;
-      moveAmount = 0;
-      longFired = false;
-      decided = false;
+      dragging = false; moveAmount = 0; longFired = false; decided = false;
     }
 
-    // === MOUSE EVENTS (Laptop) ===
+    // Mouse
     bubble.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
-      e.preventDefault(); // prevent text selection while dragging
-      onStart(e.clientX, e.clientY, false);
-
-      function onMouseMove(e) {
-        onMove(e.clientX, e.clientY);
-      }
-
-      function onMouseUp() {
-        onEnd();
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      }
-
-      // Attach to document so drag works even outside bubble
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    });
-
-    // Right click context menu
-    bubble.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      openCtx(msg, e.clientX, e.clientY);
+      onStart(e.clientX, e.clientY, false);
+      function mm(e) { onMove(e.clientX, e.clientY); }
+      function mu() { onEnd(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); }
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
     });
 
-    // === TOUCH EVENTS (Mobile) ===
-    bubble.addEventListener('touchstart', (e) => {
-      const t = e.touches[0];
-      onStart(t.clientX, t.clientY, true);
-    }, { passive: true });
-
+    // Touch
+    bubble.addEventListener('touchstart', (e) => { const t = e.touches[0]; onStart(t.clientX, t.clientY, true); }, { passive: true });
     bubble.addEventListener('touchmove', (e) => {
       if (longFired) return;
       const t = e.touches[0];
-      const dx = t.clientX - startX;
-      const dy = t.clientY - startY;
-      const adx = Math.abs(dx);
-      const ady = Math.abs(dy);
-
-      // Decide: if vertical dominant, let browser scroll (don't do anything)
+      const dx = t.clientX - startX, dy = t.clientY - startY;
       if (!decided) {
-        if (adx < 8 && ady < 8) return;
-        decided = true;
-        clearTimeout(longTimer);
-        if (ady > adx * 1.2) {
-          // Vertical = scroll, cancel everything
-          return;
-        }
-        // Check direction
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        decided = true; clearTimeout(longTimer);
+        if (Math.abs(dy) > Math.abs(dx) * 1.2) return;
         if (isSent && dx > 0) return;
         if (!isSent && dx < 0) return;
       }
-
-      // If we reach here, it's a valid horizontal swipe
-      // Need to prevent default to stop scroll
       e.preventDefault();
       onMove(t.clientX, t.clientY);
     }, { passive: false });
-
     bubble.addEventListener('touchend', () => onEnd(), { passive: true });
     bubble.addEventListener('touchcancel', () => {
       clearTimeout(longTimer);
-      bubble.style.transition = 'transform .2s ease';
-      bubble.style.transform = '';
-      arrow.style.opacity = '0';
-      dragging = false; moveAmount = 0; longFired = false; decided = false;
+      bubble.style.transition = 'transform .2s ease'; bubble.style.transform = '';
+      arrow.style.opacity = '0'; dragging = false; moveAmount = 0; longFired = false; decided = false;
     }, { passive: true });
   }
 
@@ -452,11 +437,7 @@ socket.on('messageDeleted', (d) => {
     let audio = null, playing = false;
     pb.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (playing && audio) {
-        audio.pause(); audio.currentTime = 0; playing = false;
-        pb.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
-        bars.forEach(b => b.classList.remove('on')); return;
-      }
+      if (playing && audio) { audio.pause(); audio.currentTime = 0; playing = false; pb.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>'; bars.forEach(b => b.classList.remove('on')); return; }
       audio = new Audio(vel.dataset.va); audio.play(); playing = true;
       pb.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
       audio.ontimeupdate = () => { const p = audio.currentTime / audio.duration; bars.forEach((b, i) => { if (i <= p * bars.length) b.classList.add('on'); else b.classList.remove('on'); }); };
@@ -464,197 +445,89 @@ socket.on('messageDeleted', (d) => {
     });
   }
 
-  // ===== CONTEXT MENU SYSTEM =====
+  // ===== CONTEXT MENU =====
+  let _savedMsgId = null;
+  let _savedMsgData = null;
 
-let _savedMsgId = null;
-let _savedMsgData = null;
+  function openCtx(msg, x, y) {
+    _savedMsgId = msg.id;
+    _savedMsgData = msg;
+    selMsg = msg;
+    $ctxOv.style.display = 'block';
+    $ctx.style.display = 'block';
+    $ctx.style.left = ''; $ctx.style.top = ''; $ctx.style.right = '';
 
-function openCtx(msg, x, y) {
-  // Save msg data IMMEDIATELY in separate variables
-  _savedMsgId = msg.id;
-  _savedMsgData = msg;
-  selMsg = msg;
+    requestAnimationFrame(() => {
+      const gap = 10, mW = $ctx.offsetWidth, mH = $ctx.offsetHeight;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      if (vw <= 480) {
+        $ctx.style.left = '8px'; $ctx.style.right = '8px';
+        let top = vh - mH - gap; if (top < gap) top = gap;
+        $ctx.style.top = top + 'px'; return;
+      }
+      let left = x - mW / 2, top = y - mH - 14;
+      if (left < gap) left = gap;
+      if (left + mW > vw - gap) left = vw - mW - gap;
+      if (top < gap) top = y + 14;
+      if (top + mH > vh - gap) top = Math.max(gap, vh - mH - gap);
+      $ctx.style.left = left + 'px'; $ctx.style.top = top + 'px';
+    });
+  }
 
-  $ctxOv.style.display = 'block';
-  $ctx.style.display = 'block';
+  function closeCtx() {
+    $ctx.style.display = 'none';
+    $ctxOv.style.display = 'none';
+  }
 
-  $ctx.style.left = '';
-  $ctx.style.top = '';
-  $ctx.style.right = '';
+  $ctx.addEventListener('mousedown', (e) => e.stopPropagation());
+  $ctx.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  $ctx.addEventListener('click', (e) => e.stopPropagation());
 
-  requestAnimationFrame(() => {
-    const gap = 10;
-    const mW = $ctx.offsetWidth;
-    const mH = $ctx.offsetHeight;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+  $ctxOv.addEventListener('mousedown', (e) => { e.stopPropagation(); _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx(); });
+  $ctxOv.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx(); });
 
-    if (vw <= 480) {
-      $ctx.style.left = '8px';
-      $ctx.style.right = '8px';
-      let top = vh - mH - gap;
-      if (top < gap) top = gap;
-      $ctx.style.top = top + 'px';
-      return;
-    }
-
-    let left = x - mW / 2;
-    let top = y - mH - 14;
-    if (left < gap) left = gap;
-    if (left + mW > vw - gap) left = vw - mW - gap;
-    if (top < gap) top = y + 14;
-    if (top + mH > vh - gap) top = Math.max(gap, vh - mH - gap);
-    $ctx.style.left = left + 'px';
-    $ctx.style.top = top + 'px';
+  // Delete
+  $ctxDel.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  $ctxDel.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const id = _savedMsgId; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx();
+    if (id) socket.emit('deleteMessage', id);
   });
-}
+  $ctxDel.addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const id = _savedMsgId; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx();
+    if (id) socket.emit('deleteMessage', id);
+  });
 
-function closeCtx() {
-  $ctx.style.display = 'none';
-  $ctxOv.style.display = 'none';
-  // DON'T clear selMsg here anymore
-}
+  // Reply
+  $ctxReply.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  $ctxReply.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const md = _savedMsgData; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx();
+    if (md) setReply(md);
+  });
+  $ctxReply.addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const md = _savedMsgData; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx();
+    if (md) setReply(md);
+  });
 
-// Stop clicks inside menu from reaching overlay
-$ctx.addEventListener('mousedown', (e) => e.stopPropagation());
-$ctx.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-$ctx.addEventListener('click', (e) => e.stopPropagation());
+  // React
+  $ctxReact.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+  $ctxReact.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const b = e.target.closest('.cr');
+    if (b && _savedMsgId) { const id = _savedMsgId, em = b.dataset.emoji; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx(); socket.emit('reactMessage', { msgId: id, emoji: em }); }
+    else closeCtx();
+  });
+  $ctxReact.addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const b = e.target.closest('.cr');
+    if (b && _savedMsgId) { const id = _savedMsgId, em = b.dataset.emoji; _savedMsgId = null; _savedMsgData = null; selMsg = null; closeCtx(); socket.emit('reactMessage', { msgId: id, emoji: em }); }
+    else closeCtx();
+  });
 
-// Overlay close
-$ctxOv.addEventListener('mousedown', (e) => {
-  e.stopPropagation();
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-});
-
-$ctxOv.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-});
-
-// DELETE BUTTON
-$ctxDel.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-});
-$ctxDel.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const idToDelete = _savedMsgId;
-  console.log('DELETE clicked, msgId:', idToDelete);
-
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-
-  if (idToDelete) {
-    socket.emit('deleteMessage', idToDelete);
-    console.log('deleteMessage emitted:', idToDelete);
-  }
-});
-
-// Mobile touch for delete
-$ctxDel.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const idToDelete = _savedMsgId;
-  console.log('DELETE touched, msgId:', idToDelete);
-
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-
-  if (idToDelete) {
-    socket.emit('deleteMessage', idToDelete);
-    console.log('deleteMessage emitted:', idToDelete);
-  }
-});
-
-// REPLY BUTTON
-$ctxReply.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-});
-$ctxReply.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const msgData = _savedMsgData;
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-
-  if (msgData) setReply(msgData);
-});
-
-$ctxReply.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const msgData = _savedMsgData;
-  _savedMsgId = null;
-  _savedMsgData = null;
-  selMsg = null;
-  closeCtx();
-
-  if (msgData) setReply(msgData);
-});
-
-// EMOJI REACT
-$ctxReact.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-});
-$ctxReact.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const b = e.target.closest('.cr');
-  if (b && _savedMsgId) {
-    const msgId = _savedMsgId;
-    const emoji = b.dataset.emoji;
-
-    _savedMsgId = null;
-    _savedMsgData = null;
-    selMsg = null;
-    closeCtx();
-
-    socket.emit('reactMessage', { msgId, emoji });
-  } else {
-    closeCtx();
-  }
-});
-
-$ctxReact.addEventListener('touchend', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const b = e.target.closest('.cr');
-  if (b && _savedMsgId) {
-    const msgId = _savedMsgId;
-    const emoji = b.dataset.emoji;
-
-    _savedMsgId = null;
-    _savedMsgData = null;
-    selMsg = null;
-    closeCtx();
-
-    socket.emit('reactMessage', { msgId, emoji });
-  } else {
-    closeCtx();
-  }
-});
+  // Reply
   function setReply(m) {
     replyTo = { id: m.id, sender: m.sender, text: m.text || (m.voice ? '🎤 Voice' : (m.file ? '📎 ' + m.file.originalName : '📎')) };
     $rpName.textContent = m.sender; $rpMsg.textContent = replyTo.text;
