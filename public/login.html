@@ -10,7 +10,263 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Made Just for You - Login</title>
-  <link rel="stylesheet" href="css/login.css">
+  <style>
+    * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  position: relative;
+  padding: 20px;
+}
+
+/* Floating particles */
+.particles {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.particles span {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  animation: floatUp linear infinite;
+}
+
+.particles span:nth-child(1)  { left: 5%;  animation-duration: 8s;  animation-delay: 0s;   width: 4px; height: 4px; }
+.particles span:nth-child(2)  { left: 15%; animation-duration: 12s; animation-delay: 1s;   width: 8px; height: 8px; }
+.particles span:nth-child(3)  { left: 25%; animation-duration: 10s; animation-delay: 2s;   width: 5px; height: 5px; }
+.particles span:nth-child(4)  { left: 35%; animation-duration: 14s; animation-delay: 0.5s; width: 6px; height: 6px; }
+.particles span:nth-child(5)  { left: 45%; animation-duration: 9s;  animation-delay: 3s;   width: 4px; height: 4px; }
+.particles span:nth-child(6)  { left: 55%; animation-duration: 11s; animation-delay: 1.5s; width: 7px; height: 7px; }
+.particles span:nth-child(7)  { left: 65%; animation-duration: 13s; animation-delay: 2.5s; width: 5px; height: 5px; }
+.particles span:nth-child(8)  { left: 75%; animation-duration: 8s;  animation-delay: 0.8s; width: 8px; height: 8px; }
+.particles span:nth-child(9)  { left: 85%; animation-duration: 10s; animation-delay: 3.5s; width: 4px; height: 4px; }
+.particles span:nth-child(10) { left: 90%; animation-duration: 15s; animation-delay: 1.2s; width: 6px; height: 6px; }
+.particles span:nth-child(11) { left: 40%; animation-duration: 7s;  animation-delay: 4s;   width: 5px; height: 5px; }
+.particles span:nth-child(12) { left: 70%; animation-duration: 9s;  animation-delay: 2.2s; width: 7px; height: 7px; }
+
+@keyframes floatUp {
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% {
+    transform: translateY(-10vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Login Box */
+.login-box {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 45px 35px;
+  width: 100%;
+  max-width: 400px;
+  z-index: 1;
+  animation: slideUp 0.8s ease;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 35px;
+}
+
+.heart-icon {
+  font-size: 45px;
+  margin-bottom: 10px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+.login-header h1 {
+  color: #fff;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.subtitle {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+/* Input Groups */
+.input-group {
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+  z-index: 2;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 14px 46px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+  font-size: 14px;
+  outline: none;
+  transition: all 0.3s ease;
+  -webkit-appearance: none;
+}
+
+.input-group input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.input-group input:focus {
+  border-color: #7c5cfc;
+  background: rgba(124, 92, 252, 0.08);
+  box-shadow: 0 0 20px rgba(124, 92, 252, 0.15);
+}
+
+.toggle-password {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggle-password:hover, .toggle-password:active {
+  opacity: 1;
+}
+
+/* Error Message */
+.error-msg {
+  color: #ff6b6b;
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 8px;
+  min-height: 18px;
+}
+
+/* Button */
+button[type="submit"] {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #7c5cfc, #a855f7);
+  border: none;
+  border-radius: 14px;
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(124, 92, 252, 0.4);
+}
+
+button[type="submit"]:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Footer */
+.login-footer {
+  text-align: center;
+  margin-top: 25px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+}
+
+/* Responsive */
+@media (max-width: 380px) {
+  .login-box {
+    padding: 35px 22px;
+    border-radius: 20px;
+  }
+  .login-header h1 {
+    font-size: 22px;
+  }
+  .heart-icon {
+    font-size: 38px;
+  }
+  .input-group input {
+    padding: 13px 42px;
+    font-size: 13px;
+  }
+  button[type="submit"] {
+    padding: 13px;
+    font-size: 14px;
+  }
+}
+
+@media (max-height: 600px) {
+  .login-header {
+    margin-bottom: 20px;
+  }
+  .heart-icon {
+    font-size: 35px;
+  }
+  .login-box {
+    padding: 30px 25px;
+  }
+}
+  </style>
+  <!-- <link rel="stylesheet" href="css/login.css"> -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
