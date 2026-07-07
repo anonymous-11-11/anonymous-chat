@@ -85,10 +85,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     showNotif(msg.sender, msg.text || (msg.voice ? '🎤 Voice' : ''));
   });
 
-  socket.on('messageDeleted', (d) => {
-    const el = document.querySelector(`[data-mid="${d.id}"]`);
-    if (el) { el.classList.add('fade-out-left'); el.onanimationend = () => el.remove(); }
-  });
+socket.on('messageDeleted', (d) => {
+  console.log('messageDeleted received:', d);
+  
+  // Try both data-mid and data-msg-id (in case of mismatch)
+  let el = document.querySelector(`[data-mid="${d.id}"]`);
+  
+  if (!el) {
+    // Fallback: try finding by other attribute names
+    el = document.querySelector(`[data-msg-id="${d.id}"]`);
+  }
+  
+  if (!el) {
+    // Fallback: search all message wrappers
+    const allMsgs = document.querySelectorAll('.message-wrapper');
+    allMsgs.forEach(m => {
+      if (m.dataset.mid === d.id || m.dataset.msgId === d.id) {
+        el = m;
+      }
+    });
+  }
+
+  console.log('Found element to delete:', el);
+
+  if (el) {
+    el.style.pointerEvents = 'none';
+    el.classList.add('fade-out-left');
+    
+    // Remove after animation OR after timeout (safety)
+    const removeEl = () => {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    };
+    
+    el.addEventListener('animationend', removeEl);
+    // Safety timeout in case animation doesn't fire
+    setTimeout(removeEl, 600);
+  }
+});
 
   socket.on('messageReaction', (d) => {
     const c = document.querySelector(`[data-rf="${d.msgId}"]`); if (!c) return;
@@ -431,12 +464,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // ===== CONTEXT MENU SYSTEM =====
+
+let _savedMsgId = null;
+let _savedMsgData = null;
+
 function openCtx(msg, x, y) {
+  // Save msg data IMMEDIATELY in separate variables
+  _savedMsgId = msg.id;
+  _savedMsgData = msg;
   selMsg = msg;
+
   $ctxOv.style.display = 'block';
   $ctx.style.display = 'block';
 
-  // Reset any previous inline styles
   $ctx.style.left = '';
   $ctx.style.top = '';
   $ctx.style.right = '';
@@ -448,44 +489,172 @@ function openCtx(msg, x, y) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Mobile: bottom sheet style
     if (vw <= 480) {
       $ctx.style.left = '8px';
       $ctx.style.right = '8px';
-      // Place at bottom with safe margin
       let top = vh - mH - gap;
       if (top < gap) top = gap;
       $ctx.style.top = top + 'px';
       return;
     }
 
-    // Desktop: near cursor
     let left = x - mW / 2;
     let top = y - mH - 14;
-
-    // Clamp horizontal
     if (left < gap) left = gap;
     if (left + mW > vw - gap) left = vw - mW - gap;
-
-    // If no space above, go below
     if (top < gap) top = y + 14;
-
-    // If still out of viewport, center
-    if (top + mH > vh - gap) {
-      top = Math.max(gap, vh - mH - gap);
-    }
-
+    if (top + mH > vh - gap) top = Math.max(gap, vh - mH - gap);
     $ctx.style.left = left + 'px';
     $ctx.style.top = top + 'px';
   });
 }
-  function closeCtx() { $ctx.style.display = 'none'; $ctxOv.style.display = 'none'; selMsg = null; }
-  $ctxOv.onclick = (e) => { e.stopPropagation(); closeCtx(); };
-  $ctxOv.ontouchstart = (e) => { e.preventDefault(); closeCtx(); };
-  $ctxDel.onclick = () => { if (selMsg) socket.emit('deleteMessage', selMsg.id); closeCtx(); };
-  $ctxReply.onclick = () => { if (selMsg) setReply(selMsg); closeCtx(); };
-  $ctxReact.onclick = (e) => { const b = e.target.closest('.cr'); if (b && selMsg) socket.emit('reactMessage', { msgId: selMsg.id, emoji: b.dataset.emoji }); closeCtx(); };
 
+function closeCtx() {
+  $ctx.style.display = 'none';
+  $ctxOv.style.display = 'none';
+  // DON'T clear selMsg here anymore
+}
+
+// Stop clicks inside menu from reaching overlay
+$ctx.addEventListener('mousedown', (e) => e.stopPropagation());
+$ctx.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+$ctx.addEventListener('click', (e) => e.stopPropagation());
+
+// Overlay close
+$ctxOv.addEventListener('mousedown', (e) => {
+  e.stopPropagation();
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+});
+
+$ctxOv.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+});
+
+// DELETE BUTTON
+$ctxDel.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+$ctxDel.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const idToDelete = _savedMsgId;
+  console.log('DELETE clicked, msgId:', idToDelete);
+
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+
+  if (idToDelete) {
+    socket.emit('deleteMessage', idToDelete);
+    console.log('deleteMessage emitted:', idToDelete);
+  }
+});
+
+// Mobile touch for delete
+$ctxDel.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const idToDelete = _savedMsgId;
+  console.log('DELETE touched, msgId:', idToDelete);
+
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+
+  if (idToDelete) {
+    socket.emit('deleteMessage', idToDelete);
+    console.log('deleteMessage emitted:', idToDelete);
+  }
+});
+
+// REPLY BUTTON
+$ctxReply.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+$ctxReply.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const msgData = _savedMsgData;
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+
+  if (msgData) setReply(msgData);
+});
+
+$ctxReply.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const msgData = _savedMsgData;
+  _savedMsgId = null;
+  _savedMsgData = null;
+  selMsg = null;
+  closeCtx();
+
+  if (msgData) setReply(msgData);
+});
+
+// EMOJI REACT
+$ctxReact.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+$ctxReact.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const b = e.target.closest('.cr');
+  if (b && _savedMsgId) {
+    const msgId = _savedMsgId;
+    const emoji = b.dataset.emoji;
+
+    _savedMsgId = null;
+    _savedMsgData = null;
+    selMsg = null;
+    closeCtx();
+
+    socket.emit('reactMessage', { msgId, emoji });
+  } else {
+    closeCtx();
+  }
+});
+
+$ctxReact.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const b = e.target.closest('.cr');
+  if (b && _savedMsgId) {
+    const msgId = _savedMsgId;
+    const emoji = b.dataset.emoji;
+
+    _savedMsgId = null;
+    _savedMsgData = null;
+    selMsg = null;
+    closeCtx();
+
+    socket.emit('reactMessage', { msgId, emoji });
+  } else {
+    closeCtx();
+  }
+});
   function setReply(m) {
     replyTo = { id: m.id, sender: m.sender, text: m.text || (m.voice ? '🎤 Voice' : (m.file ? '📎 ' + m.file.originalName : '📎')) };
     $rpName.textContent = m.sender; $rpMsg.textContent = replyTo.text;
