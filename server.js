@@ -161,10 +161,10 @@ io.on('connection', (socket) => {
     io.emit('newMessage', msg);
   });
 
-  socket.on('deleteMessage', (msgId) => {
-    io.emit('messageDeleted', { id: msgId, deletedBy: username });
-    reactions.delete(msgId);
-  });
+socket.on('deleteMessage', (msgId) => {
+  console.log('DELETE on server:', msgId);
+  io.emit('messageDeleted', { id: msgId, deletedBy: username });
+});
 
   socket.on('reactMessage', (data) => {
     const { msgId, emoji } = data;
