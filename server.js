@@ -165,7 +165,14 @@ socket.on('deleteMessage', (msgId) => {
   console.log('DELETE on server:', msgId);
   io.emit('messageDeleted', { id: msgId, deletedBy: username });
 });
-
+// Seen messages
+socket.on('seenMessages', (data) => {
+  // data = { seenBy: username, msgIds: [...] }
+  socket.broadcast.emit('messagesSeen', {
+    seenBy: username,
+    msgIds: data.msgIds
+  });
+});
   socket.on('reactMessage', (data) => {
     const { msgId, emoji } = data;
     if (!msgId || !emoji) return;
