@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#7c5cfc">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Just for You">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <title>Made Just for You - Login</title>
+  <link rel="stylesheet" href="css/login.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-box">
+      <div class="login-header">
+        <h1>Made Just for You 😊</h1>
+        <p class="subtitle">Anonymous Chat | Vanish</p>
+      </div>
+      <form id="loginForm">
+        <div class="input-group">
+          <div class="input-icon">👤</div>
+          <input type="text" id="username" placeholder="Username" autocomplete="off" required>
+        </div>
+        <div class="input-group">
+          <div class="input-icon">🔒</div>
+          <input type="password" id="password" placeholder="Password" required>
+          <div class="toggle-password" id="togglePass">👁️</div>
+        </div>
+        <div id="errorMsg" class="error-msg"></div>
+        <button type="submit" id="loginBtn">
+          <span class="btn-text">Enter</span>
+          <span class="btn-loader" style="display:none;">⏳</span>
+        </button>
+      </form>
+      <div class="login-footer"><p>Anonymous Chat | No Trace | Vanish</p></div>
+    </div>
+    <div class="particles">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+  <script src="js/login.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
