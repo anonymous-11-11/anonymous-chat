@@ -143,8 +143,8 @@ io.on('connection', (socket) => {
       replyTo: data.replyTo || null,
       file: data.file || null,
       voice: data.voice || null,
-      timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    };
+	  timestamp: Date.now()   
+	   };
     io.emit('newMessage', msg);
   });
 
@@ -156,8 +156,8 @@ io.on('connection', (socket) => {
       replyTo: data.replyTo || null,
       file: null,
       voice: { data: data.audioData, duration: data.duration || 0 },
-      timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    };
+      timestamp: Date.now()
+  };
     io.emit('newMessage', msg);
   });
 
